@@ -108,10 +108,22 @@ async function loadSkillsFromSheet(rawUrl) {
       return;
     }
 
-    const response = await fetch(csvUrl);
-    if (!response.ok) throw new Error(`HTTP 오류: ${response.status}`);
+    const response = await fetch(csvUrl, { 
+      cache: "no-store",
+      credentials: "omit" // 로그인 세션 정보를 제외하여 로그인 페이지 리다이렉트 방지
+    });
+    if (!response.ok) {
+      if (response.status === 404) throw new Error("시트를 찾을 수 없습니다. URL을 확인해주세요.");
+      if (response.status === 403 || response.status === 401) throw new Error("시트 접근 권한이 없습니다. '링크가 있는 모든 사용자' 공유 설정을 확인해주세요.");
+      throw new Error(`서버 응답 오류 (HTTP ${response.status})`);
+    }
 
     const csvText = await response.text();
+    // CSV 내용이 HTML(로그인 페이지 등)인지 체크
+    if (csvText.includes("<!DOCTYPE html>") || csvText.includes("<html")) {
+      throw new Error("시트가 비공개 상태이거나 로그인 페이지로 리다이렉트되었습니다.");
+    }
+
     const skills = parseCsvToSkills(csvText);
 
     if (skills.length === 0) {
@@ -124,7 +136,7 @@ async function loadSkillsFromSheet(rawUrl) {
 
   } catch (err) {
     console.error("스킬 불러오기 실패:", err);
-    showStatus("불러오기 실패. 시트가 공개 공유 상태인지 확인해주세요.", "error");
+    showStatus(`실패: ${err.message}`, "error");
   }
 }
 
@@ -446,30 +458,47 @@ function showContextMenu(x, y, skill, row) {
 
   const menuWidth = contextMenu.offsetWidth;
   const menuHeight = contextMenu.offsetHeight;
+  const submenuWidth = 140; // CSS min-width 기준
   const windowWidth = window.innerWidth;
   const windowHeight = window.innerHeight;
+  const centerX = windowWidth / 2;
 
-  // 2. 가로/세로 위치 조정
+  // 2. 가로 위치 조정 (중앙 기준 법칙 + 여유 공간 체크)
   let finalX = x;
   let finalY = y;
 
-  // 오른쪽 끝을 넘어가면 왼쪽으로 이동 (서브메뉴 140px 공간까지 고려)
-  if (finalX + menuWidth + 140 > windowWidth) {
-    // 좁은 공간이면 아예 왼쪽으로 확 밉니다.
-    finalX = x - menuWidth;
-    // 서브메뉴도 왼쪽으로 나오게 클래스 부여 (CSS에서 처리하거나 JS로 변경)
-    ctxSubmenu.style.left = "-100%";
-  } else {
+  if (x < centerX) {
+    // 마우스가 왼쪽 - 오른쪽으로 메뉴 펼침
+    finalX = x;
+    // 만약 오른쪽 끝으로 서브메뉴가 나간다면?
+    if (finalX + menuWidth + submenuWidth > windowWidth) {
+      // 최대한 오른쪽 끝에 붙임
+      finalX = windowWidth - menuWidth - submenuWidth - 5;
+    }
     ctxSubmenu.style.left = "100%";
+    ctxSubmenu.style.right = "auto";
+  } else {
+    // 마우스가 오른쪽 - 왼쪽으로 메뉴 펼침
+    finalX = x - menuWidth;
+    // 만약 왼쪽 끝으로 서브메뉴가 나간다면?
+    if (finalX - submenuWidth < 0) {
+      // 최대한 왼쪽 끝에 붙임
+      finalX = submenuWidth + 5;
+    }
+    ctxSubmenu.style.left = "auto";
+    ctxSubmenu.style.right = "100%";
   }
 
-  // 아래쪽 끝을 넘어가면 위로 이동
+  // 3. 세로 위치 조정 (바닥 공간 체크)
   if (finalY + menuHeight > windowHeight) {
     finalY = windowHeight - menuHeight - 10;
   }
 
-  // 최소/최대 좌표 보정
+  // 4. 최종 화면 경계 방어 (절대 나가지 않게)
   if (finalX < 5) finalX = 5;
+  if (finalX + menuWidth > windowWidth - 5) {
+    finalX = windowWidth - menuWidth - 5;
+  }
   if (finalY < 5) finalY = 5;
 
   contextMenu.style.left = `${finalX}px`;
