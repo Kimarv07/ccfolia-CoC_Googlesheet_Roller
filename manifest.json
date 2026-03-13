@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "CCFOLIA Auto Roller",
+  "version": "1.0",
+  "description": "코코포리아와 구글시트를 연동해서 버튼 하나로 다이스를 굴리게 해 줍니다. \n by Kimarv",
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.ccfolia.com/*",
+    "https://docs.google.com/*"
+  ],
+  "action": {
+    "default_title": "CCFOLIA Auto Roller 열기"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://ccfolia.com/rooms/*",
+        "https://*.ccfolia.com/rooms/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ]
+}
