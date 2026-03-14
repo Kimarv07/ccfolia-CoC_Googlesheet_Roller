@@ -113,7 +113,13 @@
         <input type="text" id="add-name-input" placeholder="예: 무술(태권도)" style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left;" />
         
         <label style="font-size: 10px; color:#a0b0c0;">기능 수치</label>
-        <input type="number" id="add-value-input" min="1" max="100" placeholder="1~100" />
+        <input type="number" id="add-value-input" min="1" max="100" placeholder="1~100" style="margin-bottom: 8px;" />
+        
+        <label style="font-size: 10px; color:#a0b0c0;">카테고리 (자동 분류 원할 시 '자동' 선택)</label>
+        <select id="add-category-select" style="margin-bottom: 8px; font-size: 12px; padding: 6px; width: 100%; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0; cursor: pointer;">
+          <option value="AUTO">-- 자동 분류 --</option>
+          <option value="기타">기타</option>
+        </select>
         
         <div class="edit-modal-buttons" style="margin-top: 5px;">
           <button id="add-confirm" class="confirm-btn">추가</button>

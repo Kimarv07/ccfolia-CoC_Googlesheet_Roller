@@ -31,6 +31,7 @@ const openAddBtn = document.getElementById("open-add-skill");
 const addModal = document.getElementById("add-modal");
 const addNameInput = document.getElementById("add-name-input");
 const addValueInput = document.getElementById("add-value-input");
+const addCategorySelect = document.getElementById("add-category-select");
 const addConfirm = document.getElementById("add-confirm");
 const addCancel = document.getElementById("add-cancel");
 
@@ -108,7 +109,7 @@ async function loadSkillsFromSheet(rawUrl) {
       return;
     }
 
-    const response = await fetch(csvUrl, { 
+    const response = await fetch(csvUrl, {
       cache: "no-store",
       credentials: "omit" // 로그인 세션 정보를 제외하여 로그인 페이지 리다이렉트 방지
     });
@@ -227,31 +228,57 @@ function parseCsvToSkills(csvText) {
       const flag = cols[i].trim().toUpperCase();
 
       if (flag === "FALSE" || flag === "TRUE") {
-        const name = cols[i + 1] ? cols[i + 1].trim().replace(/^"|"$/g, "") : "";
+        // --- 기능명 추출 (멀티 셀 지원) ---
+        // 마커(FALSE/TRUE) 이후부터 숫자(수치)가 나오기 전까지의 모든 텍스트를 이름으로 간주합니다.
+        // 예: [사격, , 권총] -> "사격(권총)"
+        let nameParts = [];
+        let j = i + 1;
+        let numericStartIndex = -1;
 
-        if (name && !/^\d+$/.test(name)) {
-          // 기능명 이후부터 다음 FALSE/TRUE 마커 전까지 최대값을 찾습니다.
+        while (j < cols.length) {
+          const content = cols[j].trim().replace(/^"|"$/g, "");
+          const isMarker = content.toUpperCase() === "FALSE" || content.toUpperCase() === "TRUE";
+          const isNum = /^\d+$/.test(content);
+
+          if (isMarker) break;
+          if (isNum) {
+            numericStartIndex = j;
+            break;
+          }
+
+          if (content) nameParts.push(content);
+          j++;
+        }
+
+        if (nameParts.length > 0) {
+          let fullName = nameParts[0];
+          if (nameParts.length > 1) {
+            fullName += `(${nameParts.slice(1).join("/")})`;
+          }
+
+          // --- 수치 추출 ---
+          // 이름 파트 이후부터 다음 마커 전까지의 숫자 중 최대값을 찾습니다.
           let maxValue = -1;
-          let j = i + 2;
+          let k = (numericStartIndex !== -1) ? numericStartIndex : j;
 
-          while (j < cols.length) {
-            const nextFlag = cols[j].trim().toUpperCase();
+          while (k < cols.length) {
+            const nextFlag = cols[k].trim().toUpperCase();
             if (nextFlag === "FALSE" || nextFlag === "TRUE") break;
 
-            const num = parseInt(cols[j].trim().replace(/^"|"$/g, ""), 10);
-            if (!isNaN(num) && num >= 1 && num <= 100) {
+            const num = parseInt(cols[k].trim().replace(/^"|"$/g, ""), 10);
+            if (!isNaN(num) && num >= 1 && num <= 900) {
               maxValue = Math.max(maxValue, num);
             }
-            j++;
+            k++;
           }
 
           // cleanSkillName()으로 특수기호를 제거한 뒤 저장합니다.
-          const cleanedName = cleanSkillName(name);
+          const cleanedName = cleanSkillName(fullName);
           if (maxValue > 0 && cleanedName && !skills.some(s => s.name === cleanedName)) {
             skills.push({ name: cleanedName, value: maxValue });
           }
 
-          i = j; // 다음 블록 시작 위치로 이동
+          i = k; // 다음 블록 시작 위치로 이동
           continue;
         }
       }
@@ -269,20 +296,32 @@ function parseCsvToSkills(csvText) {
 
     for (let k = 0; k < cols.length - 1; k++) {
       const name = cols[k].trim().replace(/^"|"$/g, "");
-      const value = cols[k + 1].trim().replace(/^"|"$/g, "");
+      
+      // 이름 후보가 유효한 문자열이고 숫자가 아닐 때
+      if (name && !/^\d+$/.test(name)) {
+        // 이름 바로 다음 칸부터 최대 3칸 이내에서 숫자를 찾아봅니다. (빈 칸 건너뛰기 지원)
+        for (let offset = 1; offset <= 3; offset++) {
+          if (k + offset >= cols.length) break;
+          
+          const value = cols[k + offset].trim().replace(/^"|"$/g, "");
+          if (!value) continue; // 빈 칸이면 다음 칸 확인
 
-      if (
-        name &&
-        !/^\d+$/.test(name) &&
-        /^\d+$/.test(value) &&
-        parseInt(value) >= 1 &&
-        parseInt(value) <= 100
-      ) {
-        const cleanedName = cleanSkillName(name);
-        if (cleanedName && !skills.some(s => s.name === cleanedName)) {
-          skills.push({ name: cleanedName, value: parseInt(value) });
+          if (/^\d+$/.test(value)) {
+            const num = parseInt(value, 10);
+            if (num >= 1 && num <= 900) {
+              const cleanedName = cleanSkillName(name);
+              if (cleanedName && !skills.some(s => s.name === cleanedName)) {
+                skills.push({ name: cleanedName, value: num });
+              }
+              // 값을 찾았으므로 k를 이동시켜 중복 방지
+              k += offset;
+            }
+            break; // 숫자를 만났으므로 (유효하건 아니건) 이 이름에 대한 탐색은 종료
+          } else {
+            // 문자를 만났다면 이름-수치 쌍이 아니라고 판단하고 종료
+            break;
+          }
         }
-        k++;
       }
     }
   });
@@ -335,8 +374,9 @@ function renderSkills(skills) {
 
   skills.forEach(skill => {
     let found = false;
-    for (const [cat, skillNames] of Object.entries(categoryMapping)) {
-      if (skillNames.includes(skill.name)) {
+    for (const [cat, keywords] of Object.entries(categoryMapping)) {
+      // 100% 일치하거나, 카테고리 매핑 내 단어가 기능 이름에 포함되어 있는지 확인 (유사어)
+      if (keywords.some(k => skill.name.includes(k) || k.includes(skill.name))) {
         grouped[cat].push(skill);
         found = true;
         break;
@@ -492,6 +532,21 @@ function showContextMenu(x, y, skill, row) {
   // 3. 세로 위치 조정 (바닥 공간 체크)
   if (finalY + menuHeight > windowHeight) {
     finalY = windowHeight - menuHeight - 10;
+  }
+
+  // 3-1. 서브메뉴(카테고리 목록) 세로 위치 보정
+  // 서브메뉴의 높이를 측정합니다. (max-height: 200px 고려)
+  const realSubmenuHeight = ctxSubmenu.offsetHeight || 200;
+  // '카테고리 이동' 버튼의 상단 위치 = 메뉴 시작점(finalY) + 첫 번째 버튼 높이(약 36px)
+  const categoryBtnTop = finalY + 36;
+
+  if (categoryBtnTop + realSubmenuHeight > windowHeight) {
+    // 바닥을 뚫고 나간다면 아래쪽을 부모 버튼의 하단에 맞춤 (또는 화면 끝에 맞춤)
+    ctxSubmenu.style.top = "auto";
+    ctxSubmenu.style.bottom = "0";
+  } else {
+    ctxSubmenu.style.top = "0";
+    ctxSubmenu.style.bottom = "auto";
   }
 
   // 4. 최종 화면 경계 방어 (절대 나가지 않게)
@@ -718,14 +773,45 @@ openAddBtn.addEventListener("click", () => {
       return;
     }
 
-    // 새 스킬 객체 생성 (기존 카테고리 판별 로직 재사용)
+    // 새 스킬 객체 생성
     const newSkill = { name: cleanedName, value: value };
-    createSkillElement(newSkill);
+    const selectedCat = addCategorySelect.value === "AUTO" ? null : addCategorySelect.value;
+    createSkillElement(newSkill, selectedCat);
 
     closeAddModal();
     cleanup();
     showToast(`'${cleanedName}' (수치: ${value}) 기능이 추가되었습니다.`);
   };
+
+  // 카테고리 드롭다운 동적 구성
+  function populateAddCategoryDropdown() {
+    // 기본 옵션 유지 (AUTO, 기타)
+    addCategorySelect.innerHTML = `
+      <option value="AUTO">-- 자동 분류 --</option>
+      <option value="기타">기타</option>
+    `;
+
+    // 현재 화면에 있는 카테고리들 추가
+    const existingCats = [];
+    document.querySelectorAll(".category-block").forEach(block => {
+      const name = block.querySelector(".category-title").textContent;
+      if (name !== "기타") existingCats.push(name);
+    });
+
+    // config.js의 모든 카테고리도 후보군에 추가 (중복 제거)
+    Object.keys(categoryMapping).forEach(cat => {
+      if (!existingCats.includes(cat) && cat !== "기타") existingCats.push(cat);
+    });
+
+    existingCats.sort().forEach(cat => {
+      const opt = document.createElement("option");
+      opt.value = cat;
+      opt.textContent = cat;
+      addCategorySelect.appendChild(opt);
+    });
+  }
+
+  populateAddCategoryDropdown();
 
   const onCancel = () => { closeAddModal(); cleanup(); };
 
@@ -752,13 +838,17 @@ function closeAddModal() {
 }
 
 // 스킬 DOM 요소를 단일 생성하여 알맞은 카테고리에 붙여주는 함수
-function createSkillElement(skill) {
-  // 1. 카테고리 판별
-  let targetCatName = "기타";
-  for (const [cat, skillNames] of Object.entries(categoryMapping)) {
-    if (skillNames.includes(skill.name)) {
-      targetCatName = cat;
-      break;
+function createSkillElement(skill, forceCategory = null) {
+  // 1. 카테고리 판별 (유사어 감지 로직 적용)
+  let targetCatName = forceCategory || "기타";
+
+  if (!forceCategory) {
+    for (const [cat, keywords] of Object.entries(categoryMapping)) {
+      // 100% 일치하거나, 카테고리 매핑 내 단어가 기능 이름에 포함되어 있는지 확인 (유사어)
+      if (keywords.some(k => skill.name.includes(k) || k.includes(skill.name))) {
+        targetCatName = cat;
+        break;
+      }
     }
   }
 
