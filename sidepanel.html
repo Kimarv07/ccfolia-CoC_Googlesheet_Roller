@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCFOLIA Auto Roller</title>
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
+
 <body>
   <div id="app">
 
@@ -21,14 +23,14 @@
       <div class="field-group">
         <label for="sheet-url">📄 구글 시트 URL</label>
         <div class="input-row">
-          <input
-            type="text"
-            id="sheet-url"
-            placeholder="https://docs.google.com/spreadsheets/d/..."
-          />
+          <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
           <button id="load-btn">불러오기</button>
         </div>
-        <p class="hint">※ 시트는 '링크가 있는 모든 사용자' 보기 권한이 필요합니다.</p>
+        <div style="margin-top: 6px; font-size: 11px; color:#e0e0e0; display:flex; align-items:center;">
+          <input type="checkbox" id="use-sheet-headers" style="margin:0 6px 0 0; cursor:pointer;" />
+          <label for="use-sheet-headers" style="cursor:pointer; color:#a8c8ff;">[다단 시트 전용] 시트 내부 헤더명으로 분류하기</label>
+        </div>
+        <p class="hint" style="margin-top:6px;">※ 시트는 '링크가 있는 모든 사용자' 보기 권한이 필요합니다.</p>
       </div>
 
       <!-- 다이스 봇 선택 -->
@@ -41,7 +43,8 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 4px;">
           <p class="hint" id="dice-hint" style="margin-top:0;">CC&lt;=수치: 성공/실패 판정</p>
           <div style="display: flex; gap: 4px;">
-            <button id="open-add-category" class="add-skill-btn" style="color:#64b5f6; border-color:#64b5f6;">+ 카테고리 추가</button>
+            <button id="open-add-category" class="add-skill-btn" style="color:#64b5f6; border-color:#64b5f6;">+ 카테고리
+              추가</button>
             <button id="open-add-skill" class="add-skill-btn">+ 기능 수동 추가</button>
           </div>
         </div>
@@ -90,11 +93,13 @@
     <!-- 카테고리 수동 추가 모달 -->
     <div id="add-category-modal" class="edit-modal hidden">
       <div class="edit-modal-inner">
-        <p style="margin-bottom: 4px; font-size: 12px; font-weight: 700; color: #a8c8ff; text-align: center;">카테고리 수동 추가</p>
-        
+        <p style="margin-bottom: 4px; font-size: 12px; font-weight: 700; color: #a8c8ff; text-align: center;">카테고리 수동 추가
+        </p>
+
         <label style="font-size: 10px; color:#a0b0c0;">카테고리 이름</label>
-        <input type="text" id="add-category-input" placeholder="예: 무기 공격" style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0;" />
-        
+        <input type="text" id="add-category-input" placeholder="예: 무기 공격"
+          style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0;" />
+
         <div class="edit-modal-buttons" style="margin-top: 5px;">
           <button id="add-category-confirm" style="background:#64b5f6; color:#000;">추가</button>
           <button id="add-category-cancel" style="background:#274472; color:#a0b0c0;">취소</button>
@@ -102,31 +107,33 @@
       </div>
     </div>
 
-    </div>
+  </div>
 
-    <!-- 기능 수동 추가 모달 -->
-    <div id="add-modal" class="edit-modal hidden">
-      <div class="edit-modal-inner">
-        <p id="edit-modal-title" style="margin-bottom: 4px;">기능 수동 추가</p>
-        
-        <label style="font-size: 10px; color:#a0b0c0;">기능 이름</label>
-        <input type="text" id="add-name-input" placeholder="예: 무술(태권도)" style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left;" />
-        
-        <label style="font-size: 10px; color:#a0b0c0;">기능 수치</label>
-        <input type="number" id="add-value-input" min="1" max="100" placeholder="1~100" style="margin-bottom: 8px;" />
-        
-        <label style="font-size: 10px; color:#a0b0c0;">카테고리 (자동 분류 원할 시 '자동' 선택)</label>
-        <select id="add-category-select" style="margin-bottom: 8px; font-size: 12px; padding: 6px; width: 100%; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0; cursor: pointer;">
-          <option value="AUTO">-- 자동 분류 --</option>
-          <option value="기타">기타</option>
-        </select>
-        
-        <div class="edit-modal-buttons" style="margin-top: 5px;">
-          <button id="add-confirm" class="confirm-btn">추가</button>
-          <button id="add-cancel" class="cancel-btn">취소</button>
-        </div>
+  <!-- 기능 수동 추가 모달 -->
+  <div id="add-modal" class="edit-modal hidden">
+    <div class="edit-modal-inner">
+      <p id="edit-modal-title" style="margin-bottom: 4px;">기능 수동 추가</p>
+
+      <label style="font-size: 10px; color:#a0b0c0;">기능 이름</label>
+      <input type="text" id="add-name-input" placeholder="예: 무술(태권도)"
+        style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left;" />
+
+      <label style="font-size: 10px; color:#a0b0c0;">기능 수치</label>
+      <input type="number" id="add-value-input" min="1" max="100" placeholder="1~100" style="margin-bottom: 8px;" />
+
+      <label style="font-size: 10px; color:#a0b0c0;">카테고리 (자동 분류 원할 시 '자동' 선택)</label>
+      <select id="add-category-select"
+        style="margin-bottom: 8px; font-size: 12px; padding: 6px; width: 100%; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0; cursor: pointer;">
+        <option value="AUTO">-- 자동 분류 --</option>
+        <option value="기타">기타</option>
+      </select>
+
+      <div class="edit-modal-buttons" style="margin-top: 5px;">
+        <button id="add-confirm" class="confirm-btn">추가</button>
+        <button id="add-cancel" class="cancel-btn">취소</button>
       </div>
     </div>
+  </div>
 
   </div>
 
@@ -134,4 +141,5 @@
   <script src="config.js"></script>
   <script src="sidepanel.js"></script>
 </body>
+
 </html>

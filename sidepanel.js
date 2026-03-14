@@ -125,7 +125,8 @@ async function loadSkillsFromSheet(rawUrl) {
       throw new Error("시트가 비공개 상태이거나 로그인 페이지로 리다이렉트되었습니다.");
     }
 
-    const skills = parseCsvToSkills(csvText);
+    const useSheetHeaders = document.getElementById("use-sheet-headers").checked;
+    const skills = parseCsvToSkills(csvText, useSheetHeaders);
 
     if (skills.length === 0) {
       showStatus("불러온 스킬이 없습니다. 시트 구조를 확인해주세요.", "error");
@@ -200,40 +201,98 @@ function normalizeCsvText(csvText) {
   }
   return result;
 }
-
-function parseCsvToSkills(csvText) {
+function parseCsvToSkills(csvText, useSheetHeaders = true) {
   const skills = [];
 
   // 멀티라인 셀을 먼저 정규화한 뒤 줄 단위로 나눕니다.
   const rows = normalizeCsvText(csvText).split(/\r?\n/);
 
+  // --- [NEW] 상태 기반 카테고리 추적 ---
+  // 시트를 위에서 아래로 읽으며, 각 열(왼쪽 단락, 오른쪽 단락 등)의 최신 헤더를 기억합니다.
+  let activeCategories = []; // { colIdx: number, catName: string }
+
+  // 스킬의 열 인덱스를 받아 가장 가까운 활성 카테고리를 반환하는 헬퍼 함수
+  const getClosestCategory = (targetIdx) => {
+    if (activeCategories.length === 0) return null;
+    let closest = activeCategories[0];
+    let minDiff = Math.abs(targetIdx - closest.colIdx);
+    for (let c = 1; c < activeCategories.length; c++) {
+      let diff = Math.abs(targetIdx - activeCategories[c].colIdx);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = activeCategories[c];
+      }
+    }
+    // 감지된 헤더와 스킬 이름의 열 거리가 너무 멀면(6칸 이상) 무관한 단락으로 간주
+    if (minDiff > 5) return null;
+    return closest.catName;
+  };
+
   rows.forEach(row => {
     // 각 줄을 쉼표(,) 기준으로 분리합니다.
-    // 따옴표로 묶인 셀 안의 쉼표를 무시하는 파서를 사용합니다.
     const cols = splitCsvRow(row);
 
+    // 1. 현재 행에서 카테고리 헤더 감지 및 상태 업데이트 (사용자가 허용했을 때만)
+    if (useSheetHeaders) {
+      cols.forEach((cell, idx) => {
+      const text = cell.trim().replace(/^"|"$/g, "");
+      if (!text || text.length < 2 || text.length > 15) return; // 너무 긴 문장은 헤더가 아님
+
+      let detectedCat = null;
+      // config.js의 카테고리명과 직접 매칭
+      for (const catName of Object.keys(categoryMapping)) {
+        const shortName = catName.replace(" 기능치", "");
+        if (text === catName || text === shortName ||
+          (text.includes(shortName) && (text.includes("기능") || text.endsWith("치") || text.includes("능력")))) {
+          detectedCat = catName;
+          break;
+        }
+      }
+
+      // 하드코딩된 주요 키워드(유사어, 다국어) 폴백 (우선순위 높음)
+      if (!detectedCat) {
+        if (text === "戦闘" || text === "전투" || text === "전투 기능" || text === "전투기능") detectedCat = "전투 기능치";
+        else if (text === "探索" || text === "탐색" || text === "탐색 기능" || text === "탐색기능") detectedCat = "탐색 기능치";
+        else if (text === "交渉" || text === "교섭" || text.includes("대인관계")) detectedCat = "대인관계/교섭 기능치";
+        else if (text === "知識" || text === "지식" || text === "지식 기능") detectedCat = "전문 지식(문과) 기능치";
+        else if (text === "特性" || text === "특성" || text === "능력치" || text === "특성치") detectedCat = "특성치";
+        else if (text === "行動" || text === "행동" || text === "행동 기능") detectedCat = "행동 기능치";
+      }
+
+      if (detectedCat) {
+        // 기존에 등록된 헤더 중 열 위치가 비슷한(±4칸 이내) 것이 있다면 갱신 (같은 단락으로 취급)
+        let found = false;
+        for (let ac of activeCategories) {
+          if (Math.abs(ac.colIdx - idx) <= 4) {
+            ac.catName = detectedCat;
+            ac.colIdx = idx; // 위치도 최신화
+            found = true;
+            break;
+          }
+        }
+        // 없으면 새로운 단락(열)으로 추가
+        if (!found) {
+          activeCategories.push({ colIdx: idx, catName: detectedCat });
+        }
+      }
+    });
+
+    // activeCategories 정렬 (왼쪽에서 오른쪽 순)
+    activeCategories.sort((a, b) => a.colIdx - b.colIdx);
+    }
+
     // -----------------------------------------------------------
-    // 전략 1: CoC 시트(FALSE/TRUE 마커 + 최대값) 패턴 탐색
-    //
-    // CoC 시트의 스킬 행은 다음과 같은 구조입니다:
-    //   [FALSE, 기능명, 空, 기본값, 추가점수, 합계, 절반, 5분의1, ...]
-    //
-    // "합계가 항상 N번째 칸에 있다"고 확신할 수 없으므로,
-    // 기능명 이후 다음 FALSE/TRUE 마커 전까지 등장하는 숫자(1~100) 중
-    // 가장 큰 값을 최종 수치로 사용합니다.
-    // → 예: 기본(27), 추가(30), 합계(57), 절반(28), 1/5(11) 중 max = 57 ✅
+    // 2. 전략 1: CoC 시트(FALSE/TRUE 마커 + 최대값) 패턴 탐색
     // -----------------------------------------------------------
     let i = 0;
     while (i < cols.length) {
       const flag = cols[i].trim().toUpperCase();
 
       if (flag === "FALSE" || flag === "TRUE") {
-        // --- 기능명 추출 (멀티 셀 지원) ---
-        // 마커(FALSE/TRUE) 이후부터 숫자(수치)가 나오기 전까지의 모든 텍스트를 이름으로 간주합니다.
-        // 예: [사격, , 권총] -> "사격(권총)"
         let nameParts = [];
         let j = i + 1;
         let numericStartIndex = -1;
+        let firstNameIdx = -1; // 실제 이름이 시작되는 열 인덱스
 
         while (j < cols.length) {
           const content = cols[j].trim().replace(/^"|"$/g, "");
@@ -246,18 +305,23 @@ function parseCsvToSkills(csvText) {
             break;
           }
 
-          if (content) nameParts.push(content);
+          if (content) {
+            if (firstNameIdx === -1) firstNameIdx = j;
+            nameParts.push(content);
+          }
           j++;
         }
 
         if (nameParts.length > 0) {
           let fullName = nameParts[0];
+          // ✨ 현재 스킬이 위치한 열과 가장 가까운 헤더를 찾습니다.
+          const sheetCategory = getClosestCategory(firstNameIdx !== -1 ? firstNameIdx : i);
+
           if (nameParts.length > 1) {
             fullName += `(${nameParts.slice(1).join("/")})`;
           }
 
           // --- 수치 추출 ---
-          // 이름 파트 이후부터 다음 마커 전까지의 숫자 중 최대값을 찾습니다.
           let maxValue = -1;
           let k = (numericStartIndex !== -1) ? numericStartIndex : j;
 
@@ -266,16 +330,18 @@ function parseCsvToSkills(csvText) {
             if (nextFlag === "FALSE" || nextFlag === "TRUE") break;
 
             const num = parseInt(cols[k].trim().replace(/^"|"$/g, ""), 10);
-            if (!isNaN(num) && num >= 1 && num <= 900) {
+            if (!isNaN(num) && num >= 1 && num <= 100) {
               maxValue = Math.max(maxValue, num);
             }
             k++;
           }
 
-          // cleanSkillName()으로 특수기호를 제거한 뒤 저장합니다.
           const cleanedName = cleanSkillName(fullName);
-          if (maxValue > 0 && cleanedName && !skills.some(s => s.name === cleanedName)) {
-            skills.push({ name: cleanedName, value: maxValue });
+          const isExcluded = typeof excludedSkills !== 'undefined' && excludedSkills.some(e => cleanedName.includes(e));
+          const hasNumber = /\d/.test(cleanedName);
+
+          if (maxValue > 0 && cleanedName && !isExcluded && !hasNumber && !skills.some(s => s.name === cleanedName)) {
+            skills.push({ name: cleanedName, value: maxValue, sheetCategory });
           }
 
           i = k; // 다음 블록 시작 위치로 이동
@@ -286,32 +352,33 @@ function parseCsvToSkills(csvText) {
     }
 
     // -----------------------------------------------------------
-    // 전략 2: 일반 패턴 Fallback — "기능명(문자열), 수치(숫자)" 인접 쌍 탐색
-    // 이 행에 FALSE/TRUE 마커가 없는 단순 시트(A열=이름, B열=수치)를 처리합니다.
+    // 3. 전략 2: 일반 패턴 Fallback — "기능명(문자열), 수치(숫자)" 인접 쌍 탐색
     // -----------------------------------------------------------
-    const rowHasMarker = cols.some(
-      c => c.trim().toUpperCase() === "FALSE" || c.trim().toUpperCase() === "TRUE"
-    );
+    const rowHasMarker = cols.some(c => c.trim().toUpperCase() === "FALSE" || c.trim().toUpperCase() === "TRUE");
     if (rowHasMarker) return; // 전략 1이 처리한 행은 건너뜁니다.
 
     for (let k = 0; k < cols.length - 1; k++) {
       const name = cols[k].trim().replace(/^"|"$/g, "");
-      
+
       // 이름 후보가 유효한 문자열이고 숫자가 아닐 때
       if (name && !/^\d+$/.test(name)) {
         // 이름 바로 다음 칸부터 최대 3칸 이내에서 숫자를 찾아봅니다. (빈 칸 건너뛰기 지원)
         for (let offset = 1; offset <= 3; offset++) {
           if (k + offset >= cols.length) break;
-          
+
           const value = cols[k + offset].trim().replace(/^"|"$/g, "");
           if (!value) continue; // 빈 칸이면 다음 칸 확인
 
           if (/^\d+$/.test(value)) {
             const num = parseInt(value, 10);
             if (num >= 1 && num <= 900) {
+              const sheetCategory = getClosestCategory(k);
               const cleanedName = cleanSkillName(name);
-              if (cleanedName && !skills.some(s => s.name === cleanedName)) {
-                skills.push({ name: cleanedName, value: num });
+              const isExcluded = typeof excludedSkills !== 'undefined' && excludedSkills.some(e => cleanedName.includes(e));
+              const hasNumber = /\d/.test(cleanedName);
+              
+              if (cleanedName && !isExcluded && !hasNumber && !skills.some(s => s.name === cleanedName)) {
+                skills.push({ name: cleanedName, value: num, sheetCategory });
               }
               // 값을 찾았으므로 k를 이동시켜 중복 방지
               k += offset;
@@ -372,12 +439,28 @@ function renderSkills(skills) {
   });
   grouped["기타"] = [];
 
+  // 키워드 우선순위 정렬 (글자 수가 긴 단어부터 먼저 검사하여 '정신분석'이 '정신'에 먹히는 현상 방지)
+  const flattenedKeywords = [];
+  for (const [cat, keywords] of Object.entries(categoryMapping)) {
+    keywords.forEach(k => {
+      flattenedKeywords.push({ keyword: k, cat });
+    });
+  }
+  // 길이 내림차순 정렬
+  flattenedKeywords.sort((a, b) => b.keyword.length - a.keyword.length);
+
   skills.forEach(skill => {
+    // 1순위: 시트 헤더를 통해 파악한 카테고리
+    if (skill.sheetCategory && grouped[skill.sheetCategory]) {
+      grouped[skill.sheetCategory].push(skill);
+      return;
+    }
+
+    // 2순위: config.js 키워드 기반 유사어 분류 (긴 단어부터 매칭)
     let found = false;
-    for (const [cat, keywords] of Object.entries(categoryMapping)) {
-      // 100% 일치하거나, 카테고리 매핑 내 단어가 기능 이름에 포함되어 있는지 확인 (유사어)
-      if (keywords.some(k => skill.name.includes(k) || k.includes(skill.name))) {
-        grouped[cat].push(skill);
+    for (const item of flattenedKeywords) {
+      if (skill.name.includes(item.keyword)) {
+        grouped[item.cat].push(skill);
         found = true;
         break;
       }

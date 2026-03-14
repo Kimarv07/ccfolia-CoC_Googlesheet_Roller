@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CCFOLIA Auto Roller",
-  "version": "1.2",
+  "version": "1.3",
   "description": "코코포리아와 구글시트를 연동해서 버튼 하나로 다이스를 굴리게 해 줍니다. \n by Kimarv",
   "permissions": [
     "storage",
