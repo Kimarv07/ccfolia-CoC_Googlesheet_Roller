@@ -11,6 +11,7 @@ let selectedBot = "CC"; // 현재 선택된 다이스 봇 (CC 또는 CCB)
 // ============================================================
 const sheetUrlInput = document.getElementById("sheet-url");
 const loadBtn = document.getElementById("load-btn");
+const defaultCommandContainer = document.getElementById("default-command-container");
 const skillContainer = document.getElementById("skill-container");
 const statusMsg = document.getElementById("status-msg");
 const diceHint = document.getElementById("dice-hint");
@@ -25,6 +26,13 @@ const editModalTitle = document.getElementById("edit-modal-title");
 const editValueInput = document.getElementById("edit-value-input");
 const editConfirm = document.getElementById("edit-confirm");
 const editCancel = document.getElementById("edit-cancel");
+
+// 프롬프트 입력 모달 요소
+const promptModal = document.getElementById("prompt-modal");
+const promptModalTitle = document.getElementById("prompt-modal-title");
+const promptValueInput = document.getElementById("prompt-value-input");
+const promptConfirm = document.getElementById("prompt-confirm");
+const promptCancel = document.getElementById("prompt-cancel");
 
 // 수동 추가 모달 요소 (스킬)
 const openAddBtn = document.getElementById("open-add-skill");
@@ -46,6 +54,8 @@ const addCategoryCancel = document.getElementById("add-category-cancel");
 // 1. 초기화: 저장된 URL과 다이스 봇 설정을 불러옴
 // ============================================================
 document.addEventListener("DOMContentLoaded", async () => {
+  renderDefaultCommands(); // 기본 커맨드 렌더링
+
   const saved = await chrome.storage.local.get(["sheetUrl", "diceBot"]);
 
   if (saved.sheetUrl) {
@@ -527,6 +537,69 @@ function renderSkills(skills) {
 }
 
 // ============================================================
+// 6-A. 기본 커맨드 렌더링
+// ============================================================
+function renderDefaultCommands() {
+  if (!defaultCommandContainer || typeof defaultCommands === "undefined") return;
+  if (defaultCommands.length === 0) return;
+
+  const block = document.createElement("div");
+  block.className = "category-block open";
+
+  const header = document.createElement("div");
+  header.className = "category-header";
+  header.style.backgroundColor = "#1a365d"; // 다른 스킬 카테고리와 약간 차이를 줌
+  header.innerHTML = `
+    <span class="category-title">🎲 기본 주사위 커맨드</span>
+    <span>
+      <span class="category-count">${defaultCommands.length}개</span>
+      <span class="category-arrow">▼</span>
+    </span>
+  `;
+  header.addEventListener("click", () => {
+    block.classList.toggle("open");
+  });
+
+  const body = document.createElement("div");
+  body.className = "category-body";
+
+  defaultCommands.forEach(cmd => {
+    const row = document.createElement("div");
+    row.className = "skill-row";
+    row.innerHTML = `
+      <span class="skill-name" style="color: #90caf9; font-weight: bold;">${cmd.name}</span>
+      <span>
+        <span class="skill-value" style="font-size: 11px; color: #a0b0c0;">${cmd.command.split(" ")[0]}</span>
+        <span class="skill-click-hint">클릭</span>
+      </span>
+    `;
+
+    row.addEventListener("click", () => {
+      // 선택된 다이스 봇(selectedBot)을 적용해야 할 경우 (CC<=이성 -> CCB<=이성 등)
+      let finalCommand = cmd.command;
+      if (finalCommand.startsWith("CC<=")) {
+        finalCommand = finalCommand.replace("CC<=", `${selectedBot}<=`);
+      }
+
+      if (cmd.requiresInput && cmd.promptMsg) {
+        openPromptModal(cmd.promptMsg, "", (val) => {
+          const formattedCommand = finalCommand.replace("{val}", val);
+          sendRollCommand(formattedCommand);
+        });
+      } else {
+        sendRollCommand(finalCommand);
+      }
+    });
+
+    body.appendChild(row);
+  });
+
+  block.appendChild(header);
+  block.appendChild(body);
+  defaultCommandContainer.appendChild(block);
+}
+
+// ============================================================
 // 7. 코코포리아 탭으로 주사위 명령 전송
 // ============================================================
 async function sendRollCommand(command) {
@@ -829,6 +902,48 @@ function showToast(msg) {
 
 function closeEditModal() {
   editModal.classList.add("hidden");
+}
+
+// ============================================================
+// 11-A. 프롬프트 모달 로직 (범용 텍스트 입력)
+// ============================================================
+function openPromptModal(title, defaultVal, callback) {
+  promptModalTitle.textContent = title;
+  promptValueInput.value = defaultVal || "";
+  promptModal.classList.remove("hidden");
+  promptValueInput.focus();
+
+  const cleanup = () => {
+    promptConfirm.removeEventListener("click", onConfirm);
+    promptCancel.removeEventListener("click", onCancel);
+    promptValueInput.removeEventListener("keydown", onKey);
+  };
+
+  const onConfirm = () => {
+    const val = promptValueInput.value.trim();
+    if (!val) {
+      promptValueInput.style.borderColor = "#f44336";
+      setTimeout(() => { promptValueInput.style.borderColor = ""; }, 800);
+      return;
+    }
+    callback(val);
+    promptModal.classList.add("hidden");
+    cleanup();
+  };
+
+  const onCancel = () => {
+    promptModal.classList.add("hidden");
+    cleanup();
+  };
+
+  const onKey = (e) => {
+    if (e.key === "Enter") onConfirm();
+    if (e.key === "Escape") onCancel();
+  };
+
+  promptConfirm.addEventListener("click", onConfirm);
+  promptCancel.addEventListener("click", onCancel);
+  promptValueInput.addEventListener("keydown", onKey);
 }
 
 // ============================================================

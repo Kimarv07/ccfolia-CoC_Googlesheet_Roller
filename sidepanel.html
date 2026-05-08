@@ -55,6 +55,9 @@
     <!-- 상태 메시지 -->
     <div id="status-msg" class="status-msg hidden"></div>
 
+    <!-- 기본 커맨드 목록 -->
+    <div id="default-command-container"></div>
+
     <!-- 스킬 목록 -->
     <div id="skill-container">
       <p class="placeholder-text">위에서 구글 시트를 불러오면<br />스킬 목록이 여기에 표시됩니다.</p>
@@ -107,6 +110,19 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- 입력 프롬프트 모달 (범용) -->
+  <div id="prompt-modal" class="edit-modal hidden">
+    <div class="edit-modal-inner">
+      <p id="prompt-modal-title" style="margin-bottom: 4px;">값 입력</p>
+      <input type="text" id="prompt-value-input" placeholder="예: -3, +2"
+        style="margin-bottom: 8px; font-size: 12px; padding: 6px; text-align: left; background: #0f3460; border: 1px solid #274472; border-radius: 6px; color: #e0e0e0; width: 100%; box-sizing: border-box;" />
+      <div class="edit-modal-buttons" style="margin-top: 5px;">
+        <button id="prompt-confirm" style="background:#64b5f6; color:#000;">확인</button>
+        <button id="prompt-cancel" style="background:#274472; color:#a0b0c0;">취소</button>
+      </div>
+    </div>
   </div>
 
   <!-- 기능 수동 추가 모달 -->
